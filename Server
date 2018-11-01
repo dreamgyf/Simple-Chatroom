@@ -1,0 +1,116 @@
+#include <iostream>
+#include <cstring>
+#include <cstdlib>
+#include <vector>
+#include <cctype>
+#include <errno.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
+using namespace std;
+
+pthread_mutex_t mutex;
+vector<int> sock;
+
+inline void error_info();
+void *socketwithclient(void *arg);
+void sendtoall(char *mes,int len);
+void closeclientsock(int &client_sock);
+
+struct client_info{
+    int sock;
+    sockaddr_in addr;
+    socklen_t len;
+};
+
+{
+    int server_sock,client_sock;
+    sockaddr_in server_addr,client_addr;
+    socklen_t client_addr_size = sizeof(client_addr);
+    client_info temp;
+    int reuseaddr = 1;
+    pthread_t id; 
+    pthread_mutex_init(&mutex,NULL);
+    if((server_sock = socket(PF_INET,SOCK_STREAM,0)) == -1)
+        error_info(); 
+    setsockopt(server_sock,SOL_SOCKET,SO_REUSEADDR,(void *)&reuseaddr,sizeof(reuseaddr));
+    memset(&server_addr,0,sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_port = htons(6666);
+    if(bind(server_sock,(sockaddr *)&server_addr,sizeof(server_addr)) == -1)
+        error_info();
+    if(listen(server_sock,10) == -1)
+        error_info();
+    while(1)
+    {
+        if((client_sock = accept(server_sock,(sockaddr *)&client_addr,&client_addr_size)) == -1)
+            error_info(); 
+            
+        pthread_mutex_lock(&mutex);
+        sock.push_back(client_sock);
+        pthread_mutex_unlock(&mutex);
+        temp.sock = client_sock;
+        temp.addr = client_addr;
+        temp.len = client_addr_size;
+        
+        pthread_create(&id,NULL,socketwithclient,(void *)&temp);
+        pthread_detach(id);
+        
+        cout << "Connected from " << inet_ntoa(client_addr.sin_addr) << endl;
+    }   
+    close(server_sock);
+    return 0;
+}   
+
+inline void error_info()
+{
+    cerr << "error" << endl;
+    exit(1);
+}
+
+void *socketwithclient(void *arg)
+{
+    client_info info = *((client_info *)arg);
+    char mes[65535];
+    while(1)
+    {
+        memset(mes,0,sizeof(mes));
+        if((read(info.sock,mes,sizeof(mes))) <= 0)
+        {
+            closeclientsock(info.sock);
+            cout << inet_ntoa(info.addr.sin_addr) << " closed" << endl;
+            return NULL;
+        }
+        sendtoall(mes,sizeof(mes));
+    }
+}
+
+
+void sendtoall(char *mes,int len)
+{
+
+    pthread_mutex_lock(&mutex);
+    for(int i = 0;i < sock.size();++i)
+    {
+        write(sock[i],mes,len);
+    }
+    pthread_mutex_unlock(&mutex);
+}
+
+void closeclientsock(int &client_sock)
+{
+    pthread_mutex_lock(&mutex);
+    for(int i = 0;i < sock.size();++i)
+    {
+        if(sock[i] == client_sock)
+        {
+            sock.erase(sock.begin() + i);
+            break;
+        }
+    }
+    pthread_mutex_unlock(&mutex);
+    close(client_sock);
+}
