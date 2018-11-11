@@ -31,7 +31,7 @@ private:
     QLabel *l_name = new QLabel(u8"昵称:",this);
     QLabel *l_ip = new QLabel(u8"IP:",this);
 
-    QString s_ip = "118.31.67.250";
+    QString s_ip = "47.100.255.133";
     QString s_name;
 
     Client *client;
